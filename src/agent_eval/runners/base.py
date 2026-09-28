@@ -21,9 +21,17 @@ class Generation:
 class RunnerError(Exception):
     """A sanitized generation failure, optionally including partial output."""
 
-    def __init__(self, message: str, *, raw_output: str = "", timed_out: bool = False) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        raw_output: str = "",
+        timed_out: bool = False,
+        generation: Generation | None = None,
+    ) -> None:
         super().__init__(message)
-        self.raw_output = raw_output
+        self.generation = generation or Generation(raw_output)
+        self.raw_output = self.generation.raw_output
         self.timed_out = timed_out
 
 
@@ -41,6 +49,8 @@ def extract_code(reply: str) -> str:
     for labels in ({"python", "py", "python3"}, {""}):
         selected = [body for _, label, body in blocks if label.strip().lower() in labels]
         if selected:
+            if not any(body.strip() for body in selected):
+                raise RunnerError("model returned empty code", raw_output=reply)
             return "\n\n".join(body.strip("\n") for body in selected) + "\n"
     if blocks:
         raise RunnerError("reply contains no Python or unlabeled code block", raw_output=reply)

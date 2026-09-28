@@ -157,3 +157,22 @@ def test_invalid_runner_fails_before_output(config_path: Path, tmp_path: Path) -
     with pytest.raises(ValueError, match="unknown runner"):
         asyncio.run(run_config(config_path, out))
     assert not out.exists()
+
+
+def test_custom_fixture_is_hashed(config_path: Path, task_path: Path, tmp_path: Path) -> None:
+    fixture = task_path.parent / "custom.py"
+    fixture.write_text("def answer(): return 42\n")
+    data = yaml.safe_load(config_path.read_text())
+    data["models"] = [
+        {"name": "fixture", "runner": "mock", "options": {"fixtures": {"answer": "custom.py"}}}
+    ]
+    data["repeats"] = 1
+    config_path.write_text(yaml.safe_dump(data))
+    out = tmp_path / "fixture-run"
+    rows = asyncio.run(run_config(config_path, out))
+    assert rows[0].outcome == "pass"
+    metadata = json.loads((out / "metadata.json").read_text())
+    assert (
+        metadata["task_hashes"]["answer"][str(fixture)]
+        == hashlib.sha256(fixture.read_bytes()).hexdigest()
+    )

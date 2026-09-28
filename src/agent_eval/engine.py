@@ -20,6 +20,7 @@ from agent_eval.report import render_report
 from agent_eval.results import Attempt, summarize
 from agent_eval.runners import create_runner
 from agent_eval.runners.base import Generation, Runner, RunnerError
+from agent_eval.runners.local import MockOptions
 from agent_eval.specs import TaskSpec, discover_tasks, load_config, load_task, task_file
 
 
@@ -66,6 +67,11 @@ async def run_config(config_path: Path, out: Path) -> list[Attempt]:
         sources = [path, *(task_file(path, name) for name in task.hidden_tests)]
         if (path.parent / task.reference).is_file():
             sources.append(task_file(path, task.reference))
+        for model in config.models:
+            if model.runner == "mock":
+                options = MockOptions.model_validate(model.options)
+                if options.variant == "reference" and task.id in options.fixtures:
+                    sources.append(task_file(path, options.fixtures[task.id]))
         hashes[task.id] = {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in sources}
     metadata = {
         "schema_version": "1.0",
@@ -104,7 +110,7 @@ async def run_config(config_path: Path, out: Path) -> list[Attempt]:
                         grading_time = time.perf_counter() - generation_end
                     except RunnerError as exc:
                         generation_end = time.perf_counter()
-                        generated = Generation(exc.raw_output)
+                        generated = exc.generation
                         graded = Grade("timeout" if exc.timed_out else "error")
                         error = str(exc)
                     except Exception as exc:

@@ -12,6 +12,8 @@ from agent_eval.runners.http import HTTPRunner
 from agent_eval.runners.local import CLIRunner, MockRunner
 from agent_eval.specs import load_task
 
+BASE = str(httpx.URL(scheme="https", host="endpoint.invalid", path="/v1"))
+
 
 @pytest.mark.parametrize(
     "reply,expected",
@@ -29,7 +31,7 @@ def test_code_extraction(reply: str, expected: str) -> None:
     assert extract_code(reply) == expected
 
 
-@pytest.mark.parametrize("reply", ["", "  ", "```json\n{}\n```"])
+@pytest.mark.parametrize("reply", ["", "  ", "```json\n{}\n```", "```python\n \n```"])
 def test_invalid_code(reply: str) -> None:
     with pytest.raises(RunnerError):
         extract_code(reply)
@@ -41,7 +43,7 @@ def test_http_success(
 ) -> None:
     monkeypatch.setenv("TEST_KEY", "secret-value")
     # A reserved invalid host; the transport intercepts every request.
-    monkeypatch.setenv("TEST_BASE", "https://endpoint.invalid/v1/")
+    monkeypatch.setenv("TEST_BASE", BASE + "/")
 
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
@@ -98,7 +100,7 @@ def test_invalid_http_responses(
     body: dict[str, Any], task_path: Path, workdir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("TEST_KEY", "secret-value")
-    monkeypatch.setenv("TEST_BASE", "https://endpoint.invalid/v1")
+    monkeypatch.setenv("TEST_BASE", BASE)
     runner = HTTPRunner(
         {"model": "test", "base_url_env": "TEST_BASE", "api_key_env": "TEST_KEY"},
         transport=httpx.MockTransport(lambda request: httpx.Response(200, json=body)),
@@ -114,7 +116,7 @@ def test_http_error_and_unknown_usage(
     monkeypatch.delenv("TEST_KEY", raising=False)
     if mode != "missing":
         monkeypatch.setenv("TEST_KEY", "secret-value")
-    monkeypatch.setenv("TEST_BASE", "https://endpoint.invalid/v1")
+    monkeypatch.setenv("TEST_BASE", BASE)
 
     def handler(request: httpx.Request) -> httpx.Response:
         if mode == "timeout":

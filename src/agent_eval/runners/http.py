@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from pathlib import Path
 from typing import Any
@@ -54,14 +55,17 @@ class HTTPRunner:
             payload["temperature"] = opts.temperature
         endpoint = "messages" if self.anthropic else "chat/completions"
         try:
-            async with httpx.AsyncClient(
-                timeout=opts.timeout_s, transport=self.transport, follow_redirects=False
-            ) as client:
+            async with (
+                asyncio.timeout(opts.timeout_s),
+                httpx.AsyncClient(
+                    timeout=opts.timeout_s, transport=self.transport, follow_redirects=False
+                ) as client,
+            ):
                 response = await client.post(
                     base_url.rstrip("/") + "/" + endpoint, headers=headers, json=payload
                 )
                 response.raise_for_status()
-        except httpx.TimeoutException as exc:
+        except (httpx.TimeoutException, TimeoutError) as exc:
             raise RunnerError("API request timed out", timed_out=True) from exc
         except (httpx.HTTPError, ValueError) as exc:
             # Never persist response bodies, URLs, headers, or credential-bearing exceptions.
@@ -87,7 +91,13 @@ class HTTPRunner:
             )
         except (KeyError, IndexError, TypeError, ValueError, AttributeError) as exc:
             raise RunnerError("API returned an invalid response") from exc
-        (workdir / task.entrypoint).write_text(extract_code(raw), encoding="utf-8")
+        try:
+            code = extract_code(raw)
+            (workdir / task.entrypoint).write_text(code, encoding="utf-8")
+        except RunnerError as exc:
+            raise RunnerError(str(exc), generation=result) from exc
+        except OSError as exc:
+            raise RunnerError("cannot write generated source", generation=result) from exc
         return result
 
 
