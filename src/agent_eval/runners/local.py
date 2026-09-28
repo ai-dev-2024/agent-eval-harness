@@ -49,7 +49,10 @@ class CLIRunner:
             )
             for part in command
         ]
-        result = await run_process(args, workdir, self.options.timeout_s)
+        try:
+            result = await run_process(args, workdir, self.options.timeout_s)
+        except OSError as exc:
+            raise RunnerError(f"cannot start agent command: {type(exc).__name__}") from exc
         if result.timed_out:
             raise RunnerError("agent timed out", raw_output=result.output, timed_out=True)
         if result.returncode:

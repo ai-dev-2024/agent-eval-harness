@@ -16,6 +16,13 @@ def _md(value: str) -> str:
     return html.escape(value).replace("|", "&#124;").replace("\n", " ").replace("\r", " ")
 
 
+def format_usd(value: float | None) -> str:
+    """Hide float summation noise such as 0.30000000000000004 without dropping small costs."""
+    if value is None:
+        return "unknown"
+    return f"{value:.6f}".rstrip("0").rstrip(".")
+
+
 def render_report(summary: Summary, format: ReportFormat) -> str:
     if format == "json":
         return summary_json(summary)
@@ -37,7 +44,7 @@ def render_report(summary: Summary, format: ReportFormat) -> str:
                 f"| {_md(model.model)} | {model.pass_at_1:.1%} | {estimates} | "
                 f"{model.mean_wall_time_s:.3f} | {model.median_wall_time_s:.3f} | "
                 f"{usage.replace('None', 'unknown')} | "
-                f"{model.cost_usd if model.cost_usd is not None else 'unknown'} |"
+                f"{format_usd(model.cost_usd)} |"
             )
         lines.extend(["", "## Per-task passes / attempts", ""])
         lines.append("| Task | " + " | ".join(_md(m.model) for m in summary.models) + " |")
@@ -64,6 +71,7 @@ def render_report(summary: Summary, format: ReportFormat) -> str:
     if format != "html":
         raise ValueError(f"unsupported report format: {format}")
     environment = Environment(autoescape=select_autoescape(default=True), undefined=StrictUndefined)
+    environment.filters["usd"] = format_usd
     template = files("agent_eval").joinpath("templates/report.html").read_text(encoding="utf-8")
     max_time = max(t for m in summary.models for t in m.wall_times_s) or 1
     return environment.from_string(template).render(summary=summary, max_time=max_time)

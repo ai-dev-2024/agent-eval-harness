@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import cast
 
 import yaml
+from pydantic import ValidationError
 
 from agent_eval import __version__
 from agent_eval.engine import run_config, validate_task
@@ -35,6 +36,35 @@ def parser() -> argparse.ArgumentParser:
     validate = sub.add_parser("validate-task", help="grade a task's reference implementation")
     validate.add_argument("path", type=Path)
     return root
+
+
+def describe_error(exc: BaseException) -> str:
+    """Name the problem without echoing input values, which can contain secrets."""
+    if isinstance(exc, ValidationError):
+        problems = [
+            f"{'.'.join(str(part) for part in error['loc']) or 'input'}: {error['msg']}"
+            for error in exc.errors(include_url=False, include_input=False, include_context=False)
+        ]
+        message = f"invalid {exc.title}: " + "; ".join(problems[:5])
+        if len(problems) > 5:
+            message += f"; and {len(problems) - 5} more"
+    elif isinstance(exc, yaml.MarkedYAMLError) and exc.problem_mark is not None:
+        mark = exc.problem_mark
+        message = f"invalid YAML at line {mark.line + 1}, column {mark.column + 1}: {exc.problem}"
+    elif isinstance(exc, OSError):
+        message = f"{exc.strerror or type(exc).__name__}"
+        if exc.filename is not None:
+            message += f": {exc.filename}"
+    elif isinstance(exc, yaml.YAMLError):
+        message = "invalid YAML"
+    else:
+        message = str(exc) or type(exc).__name__
+    return "; ".join([message, *getattr(exc, "__notes__", [])])
+
+
+def _first_leaf(group: BaseExceptionGroup[BaseException]) -> BaseException:
+    first = group.exceptions[0]
+    return _first_leaf(first) if isinstance(first, BaseExceptionGroup) else first
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -66,11 +96,14 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
         return 0
     except (OSError, ValueError, yaml.YAMLError) as exc:
-        # Detailed validation errors can contain secret values from user input.
-        print(
-            f"agent-eval: {type(exc).__name__}; check input files, options, and output path",
-            file=sys.stderr,
-        )
+        print(f"agent-eval: {describe_error(exc)}", file=sys.stderr)
+        return 2
+    except ExceptionGroup as group:
+        # Raised when an attempt fails outside its own error handling, e.g. a full disk.
+        leaf = _first_leaf(group)
+        if not isinstance(leaf, (OSError, ValueError, yaml.YAMLError)):
+            raise
+        print(f"agent-eval: {describe_error(leaf)}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
         print(

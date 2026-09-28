@@ -1,6 +1,9 @@
 import asyncio
+import contextlib
 import os
+import signal
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -106,3 +109,84 @@ def test_cancellation_cleans_up(tmp_path: Path) -> None:
             await task
 
     asyncio.run(run())
+
+
+@pytest.mark.skipif(os.name != "posix", reason="process-group semantics are POSIX-specific")
+def test_exit_is_not_delayed_by_background_children(tmp_path: Path) -> None:
+    marker = tmp_path / "orphan.txt"
+    code = (
+        "import subprocess,sys; "
+        "subprocess.Popen([sys.executable,'-c','import time,pathlib; time.sleep(1); "
+        "pathlib.Path(\"orphan.txt\").touch()']); print('done')"
+    )
+
+    async def run() -> None:
+        start = time.perf_counter()
+        result = await run_process([sys.executable, "-c", code], tmp_path, 10)
+        assert not result.timed_out and result.returncode == 0
+        assert result.output == "done\n"
+        assert time.perf_counter() - start < 5
+        await asyncio.sleep(1.3)
+        assert not marker.exists()
+
+    asyncio.run(run())
+
+
+@pytest.mark.skipif(os.name != "posix", reason="replaces file descriptor 0")
+def test_children_do_not_inherit_stdin(tmp_path: Path) -> None:
+    # An open pipe on the harness's stdin would block a child that inherited it.
+    read_fd, write_fd = os.pipe()
+    saved = os.dup(0)
+    os.dup2(read_fd, 0)
+    try:
+        code = "import sys; print(repr(sys.stdin.read()))"
+        result = asyncio.run(run_process([sys.executable, "-c", code], tmp_path, 5))
+    finally:
+        os.dup2(saved, 0)
+        for fd in (saved, read_fd, write_fd):
+            os.close(fd)
+    assert not result.timed_out
+    assert result.output == "''\n"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="setsid is POSIX-specific")
+def test_descendant_outside_process_group_cannot_hang_harness(tmp_path: Path) -> None:
+    pid_file = tmp_path / "escaped.pid"
+    code = (
+        "import os,time\n"
+        "if os.fork() == 0:\n"
+        "    os.setsid()\n"
+        f"    open({str(pid_file)!r}, 'w').write(str(os.getpid()))\n"
+        "    time.sleep(30)\n"
+        "    os._exit(0)\n"
+        "print('leader done', flush=True)\n"
+        "time.sleep(0.3)\n"
+    )
+
+    async def run() -> None:
+        start = time.perf_counter()
+        result = await run_process([sys.executable, "-c", code], tmp_path, 10)
+        assert time.perf_counter() - start < 5
+        assert not result.timed_out
+        assert "leader done" in result.output
+
+    try:
+        asyncio.run(run())
+    finally:
+        with contextlib.suppress(OSError, ValueError):
+            os.kill(int(pid_file.read_text()), signal.SIGKILL)
+
+
+def test_output_is_capped_without_blocking_the_writer(tmp_path: Path) -> None:
+    code = "import sys; sys.stdout.write('x' * 5_000_000); print('end')"
+    result = asyncio.run(
+        run_process([sys.executable, "-c", code], tmp_path, 10, max_output_bytes=1000)
+    )
+    assert not result.timed_out and result.returncode == 0
+    assert result.output.startswith("x" * 1000 + "\n[agent-eval: output truncated after 1000")
+    assert len(result.output) < 1100
+
+
+def test_missing_command_raises(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError):
+        asyncio.run(run_process([str(tmp_path / "absent")], tmp_path, 1))

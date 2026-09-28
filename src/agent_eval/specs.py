@@ -5,10 +5,10 @@ from __future__ import annotations
 import glob
 import re
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, TypeVar
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 PositiveSeconds = Annotated[float, Field(gt=0, allow_inf_nan=False)]
 
@@ -58,13 +58,24 @@ class RunConfig(StrictModel):
         return value
 
 
+_Model = TypeVar("_Model", bound=BaseModel)
+
+
 def read_yaml(path: Path) -> Any:
     with path.open(encoding="utf-8") as stream:
         return yaml.safe_load(stream)
 
 
+def _parse(model: type[_Model], path: Path) -> _Model:
+    try:
+        return model.model_validate(read_yaml(path))
+    except (ValidationError, yaml.YAMLError) as exc:
+        exc.add_note(f"in {path}")
+        raise
+
+
 def load_config(path: Path) -> RunConfig:
-    return RunConfig.model_validate(read_yaml(path))
+    return _parse(RunConfig, path)
 
 
 def task_file(task_path: Path, filename: str) -> Path:
@@ -79,7 +90,7 @@ def task_file(task_path: Path, filename: str) -> Path:
 
 
 def load_task(path: Path, *, require_reference: bool = False) -> TaskSpec:
-    spec = TaskSpec.model_validate(read_yaml(path))
+    spec = _parse(TaskSpec, path)
     if len(set(spec.hidden_tests)) != len(spec.hidden_tests):
         raise ValueError("hidden_tests contains duplicates")
     for filename in spec.hidden_tests:
@@ -92,7 +103,9 @@ def load_task(path: Path, *, require_reference: bool = False) -> TaskSpec:
 def discover_tasks(patterns: list[str], base: Path) -> list[tuple[Path, TaskSpec]]:
     paths: set[Path] = set()
     for pattern in patterns:
-        matches = [Path(p).resolve() for p in glob.glob(str(base / pattern), recursive=True)]
+        # root_dir keeps glob metacharacters in the config's own path from being expanded.
+        found = glob.glob(pattern, root_dir=base, recursive=True)
+        matches = [(base / p).resolve() for p in found]
         if not matches:
             raise ValueError(f"task glob matched no files: {pattern}")
         paths.update(matches)

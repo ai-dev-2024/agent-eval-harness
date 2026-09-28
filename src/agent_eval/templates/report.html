@@ -36,7 +36,7 @@ footer { border-top: 1px solid #ccd8e2; margin-top: 3rem; padding-top: 1rem; }
 <td>{% for k, value in model.pass_at_k.items() %}<small>@{{ k }}: {{ '%.1f'|format(value * 100) }}%</small>{% endfor %}</td>
 <td>{{ '%.3f'|format(model.mean_wall_time_s) }} / {{ '%.3f'|format(model.median_wall_time_s) }}</td>
 <td>{{ model.input_tokens if model.input_tokens is not none else 'unknown' }} / {{ model.output_tokens if model.output_tokens is not none else 'unknown' }}<small>Reported: {{ model.input_tokens_reported }}/{{ model.attempts }} in; {{ model.output_tokens_reported }}/{{ model.attempts }} out</small></td>
-<td>{{ model.cost_usd if model.cost_usd is not none else 'unknown' }}<small>{{ model.cost_reported }}/{{ model.attempts }} reported</small></td>
+<td>{{ model.cost_usd|usd }}<small>{{ model.cost_reported }}/{{ model.attempts }} reported</small></td>
 </tr>{% endfor %}</tbody></table></div>
 <p>Usage totals include only reported values; partial totals are not estimates of the missing usage. Timing includes generation and grading.</p>
 <h2>Per-task pass matrix</h2>

@@ -58,7 +58,7 @@ def test_cli_end_to_end(
     assert main(["report", str(out / "results.jsonl")]) == 0
     assert "| correct | 100.0%" in capsys.readouterr().out
     assert main(["run", str(config_path), "--out", str(out)]) == 2
-    assert "FileExistsError" in capsys.readouterr().err
+    assert f"agent-eval: File exists: {out}" in capsys.readouterr().err
 
 
 def test_cli_listing_validation_and_errors(
@@ -176,3 +176,67 @@ def test_custom_fixture_is_hashed(config_path: Path, task_path: Path, tmp_path: 
         metadata["task_hashes"]["answer"][str(fixture)]
         == hashlib.sha256(fixture.read_bytes()).hexdigest()
     )
+
+
+def test_cli_errors_are_specific_without_echoing_values(
+    config_path: Path, task_path: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    literal = "sk-literal-key-in-config"
+    config = tmp_path / "literal.yaml"
+    config.write_text(
+        yaml.safe_dump(
+            {
+                "models": [{"name": "m", "runner": "openai", "options": {"api_key": literal}}],
+                "tasks": [str(task_path)],
+            }
+        )
+    )
+    assert main(["run", str(config), "--out", str(tmp_path / "unused")]) == 2
+    err = capsys.readouterr().err
+    assert "invalid HTTPOptions" in err and "api_key: Extra inputs are not permitted" in err
+    assert literal not in err
+    task_path.write_text(task_path.read_text().replace("solution.py", "../solution.py"))
+    assert main(["run", str(config_path), "--out", str(tmp_path / "unused")]) == 2
+    err = capsys.readouterr().err
+    assert "invalid TaskSpec: entrypoint:" in err and f"in {task_path}" in err
+    config.write_text("models: [\n")
+    assert main(["run", str(config), "--out", str(tmp_path / "unused")]) == 2
+    assert "invalid YAML at line 2, column 1" in capsys.readouterr().err
+    assert main(["report", str(tmp_path / "absent.jsonl")]) == 2
+    assert "No such file or directory" in capsys.readouterr().err
+    assert not (tmp_path / "unused").exists()
+
+
+def test_invalid_result_from_custom_runner_exits_cleanly(
+    task_path: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class BadUsageRunner:
+        async def generate(self, task: TaskSpec, workdir: Path) -> Generation:
+            (workdir / task.entrypoint).write_text("def answer(): return 42\n")
+            return Generation("", input_tokens=-1)
+
+    register_runner("bad-usage", lambda options, *, task_path: BadUsageRunner())
+    config = tmp_path / "bad-usage.yaml"
+    config.write_text(
+        yaml.safe_dump(
+            {"models": [{"name": "m", "runner": "bad-usage"}], "tasks": [str(task_path)]}
+        )
+    )
+    assert main(["run", str(config), "--out", str(tmp_path / "out")]) == 2
+    assert "invalid Attempt: input_tokens:" in capsys.readouterr().err
+
+
+def test_describe_error_branches() -> None:
+    from pydantic import ValidationError
+
+    from agent_eval.cli import describe_error
+    from agent_eval.specs import RunConfig
+
+    assert describe_error(ValueError("unknown runner: x")) == "unknown runner: x"
+    assert describe_error(yaml.YAMLError("secret-ish detail")) == "invalid YAML"
+    assert describe_error(PermissionError(13, "Permission denied")) == "Permission denied"
+    with pytest.raises(ValidationError) as caught:
+        RunConfig.model_validate({f"extra{i}": "secret-value" for i in range(7)})
+    message = describe_error(caught.value)
+    assert message.startswith("invalid RunConfig: ") and message.endswith("; and 4 more")
+    assert "secret-value" not in message

@@ -88,3 +88,11 @@ def test_registry(task_path: Path) -> None:
     for runner in ("anthropic", "openai"):
         assert create_runner(runner, options, task_path=task_path)
     assert create_runner("cli", {"command": "echo {entrypoint}"}, task_path=task_path)
+
+
+def test_discovery_treats_config_directory_literally(task_path: Path, tmp_path: Path) -> None:
+    base = tmp_path / "check[out]"
+    base.mkdir()
+    found = discover_tasks([str(Path("..") / task_path.relative_to(tmp_path))], base)
+    assert [path for path, _ in found] == [task_path.resolve()]
+    assert discover_tasks([str(task_path)], base)[0][1].id == "answer"

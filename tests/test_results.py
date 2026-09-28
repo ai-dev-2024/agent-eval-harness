@@ -83,6 +83,14 @@ def test_reports_escape_text_and_include_data(format: str) -> None:
         render_report(summary, cast(ReportFormat, "bad"))
 
 
+@pytest.mark.parametrize("format", ["md", "html"])
+def test_reported_cost_hides_float_summation_noise(format: str) -> None:
+    rows = [attempt(i).model_copy(update={"cost_usd": 0.1}) for i in range(3)]
+    rows.append(attempt(3, "other").model_copy(update={"cost_usd": 0.00012}))
+    rendered = render_report(summarize(rows), cast(ReportFormat, format))
+    assert "0.30012" in rendered and "0.3001200000" not in rendered
+
+
 def test_jsonl_validation(tmp_path: Path) -> None:
     path = tmp_path / "results.jsonl"
     row = attempt(0)

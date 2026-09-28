@@ -16,7 +16,7 @@ typecheck:
 	$(BIN)/mypy --strict
 
 test:
-	$(BIN)/pytest --cov=agent_eval --cov-report=term-missing --cov-report=xml
+	$(BIN)/pytest --cov-report=xml
 
 demo:
 	$(BIN)/agent-eval run examples/mock-demo.yaml

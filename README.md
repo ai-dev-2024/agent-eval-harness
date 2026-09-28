@@ -1,5 +1,7 @@
 # agent-eval-harness
 
+## Problem
+
 Comparing coding models by reading a few plausible answers is difficult to reproduce and easy to
 misjudge. This CLI and typed Python library run the same small task through several models or
 coding-agent commands, grade the produced files against withheld pytest tests, and preserve the
@@ -147,6 +149,8 @@ tasks: [../tasks/*/task.yaml]
 
 Replace `agent-command` and flags with those supported by your installed tool. The command runs
 inside the fresh workdir and must write the entrypoint itself; stdout is saved, not treated as code.
+Standard input is `/dev/null`, so the command must not wait for interactive input. On POSIX, background
+processes it leaves in its process group are killed when it exits.
 The prompt file contains the task instructions. CLI tools inherit the parent environment for
 authentication; grader processes receive only a minimal environment without API credentials.
 
@@ -193,6 +197,59 @@ must be self-contained: only the listed files are copied, under unique test file
 `conftest.py`, auxiliary assets, and third-party pytest plugins are not loaded. Example solutions
 need only the standard library. Specify all expected error types and boundary semantics in the
 prompt; hidden tests should assess that contract rather than surprise requirements.
+
+## Sample output
+
+This is the **deterministic offline demo, not a model benchmark**. `mock-reference` writes each
+task's reference solution; `mock-wrong` writes a deliberately wrong module whose every attribute is
+a function returning `None`. The run checks that the harness separates correct from incorrect
+code end to end. The scores say nothing about any model. Timings come from one local run and vary
+by machine.
+
+```console
+$ agent-eval run examples/mock-demo.yaml --out /tmp/aeh-demo
+Completed 24 attempts; 12 passed. Report: /tmp/aeh-demo/report.html
+$ agent-eval report /tmp/aeh-demo/results.jsonl --format md
+```
+
+```markdown
+# Coding task comparison
+
+24 attempts. Pass rates are task-macro-averaged. Missing usage is unknown.
+
+| Model | Pass@1 | Pass@k | Mean (s) | Median (s) | Input / output tokens | Cost (USD) |
+| --- | ---: | --- | ---: | ---: | --- | --- |
+| mock-reference | 100.0% | 1: 100.0%, 2: 100.0% | 0.274 | 0.271 | unknown / unknown | unknown |
+| mock-wrong | 0.0% | 1: 0.0%, 2: 0.0% | 0.309 | 0.308 | unknown / unknown | unknown |
+
+## Per-task passes / attempts
+
+| Task | mock-reference | mock-wrong |
+| --- | ---: | ---: |
+| arithmetic | 2/2 | 0/2 |
+| intervals | 2/2 | 0/2 |
+| json_path | 2/2 | 0/2 |
+| lru_ttl | 2/2 | 0/2 |
+| rate_limiter | 2/2 | 0/2 |
+| roman | 2/2 | 0/2 |
+
+Reported totals may be partial. Usage coverage (attempts with input/output/cost):
+
+- mock-reference: 0/0/0 of 12.
+- mock-wrong: 0/0/0 of 12.
+```
+
+Token and cost columns are `unknown` because mock fixtures report no usage; the harness does not
+estimate it. Each attempt is one JSONL line, for example a wrong fixture failing all 31
+arithmetic tests:
+
+```json
+{"schema_version":"1.0","attempt_id":"attempt-000013","model":"mock-wrong","runner":"mock","task_id":"arithmetic","repeat":1,"outcome":"fail","tests_passed":0,"tests_total":31,"wall_time_s":0.3294831830135081,"generation_time_s":0.00031066499650478363,"grading_time_s":0.32883776602102444,"input_tokens":null,"output_tokens":null,"cost_usd":null,"error":null,"artifacts":"attempts/attempt-000013"}
+```
+
+The same Markdown report is committed as [docs/sample-report.md](docs/sample-report.md). The run
+directory also contains `report.html`, `summary.json`, `metadata.json`, the resolved config, and
+per-attempt artifacts.
 
 ## Results and interpretation
 
@@ -272,8 +329,11 @@ with cancellation. Registration is process-local; the CLI includes the four buil
   different sample sizes. The combinatorial estimator uses all samples without pretending
   that unsupported k values can be estimated.
 - **Use subprocess isolation.** Separate interpreters avoid module-cache and global-state
-  contamination between attempts. On POSIX, timeouts and cancellations kill process groups.
-  This provides operational separation, not containment of hostile Python code.
+  contamination between attempts. Each command gets `/dev/null` as stdin, and its lifetime is
+  that of the launched process: when that process exits, times out, or is cancelled, the harness
+  kills the remaining process group on POSIX. Output uses a harness-owned pipe, so a descendant
+  that leaves the group and holds the pipe open cannot stall the run. This provides operational
+  separation, not containment of hostile Python code.
 - **Avoid vendor SDKs.** Small HTTP adapters expose the payloads under test, keep dependencies
   small, and allow full offline protocol tests with `httpx.MockTransport`.
 - **Keep missing measurements explicit.** No guessed token usage, pricing, or model scores.
@@ -313,17 +373,12 @@ directory, not secret benchmark material. Saved source and logs can contain sens
 review them before sharing. Literal configured API-key redaction is a precaution, not a general
 secret detector.
 
-## Sample output
-
-<!-- SAMPLE_OUTPUT -->
-
-Placeholder: insert output from a real run here. No model benchmark claims are included.
-
 ## Limitations
 
 - Python tasks only, designed as small standalone modules, with no dependency installation.
 - Public fixtures may be memorized; only specified behavior is tested, not code quality or general ability.
-- No container per attempt, memory/output-size limits, filesystem jail, or network isolation.
+- No container per attempt, memory or disk limits, filesystem jail, or network isolation.
+- Captured stdout/stderr is limited to the first 1 MB per process; the rest is drained and dropped.
 - POSIX process-group cleanup is stronger than the direct-child cleanup available on other platforms.
 - No automatic retries or rate-limit backoff; errors remain visible as attempts.
 - No run resume, service-side seed guarantee, streaming responses, or built-in agent sessions.
@@ -347,6 +402,6 @@ make demo
 ```
 
 CI is configured for Python 3.11 and 3.12, checks coverage at 85% or higher, builds the package and
-Docker image, and uploads an offline HTML demo report. This describes the committed workflow;
-it is not a claim that a hosted CI run has occurred. See [CONTRIBUTING.md](CONTRIBUTING.md).
+Docker image, runs the offline demo, and uploads its HTML report.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 Distributed under the [MIT license](LICENSE).

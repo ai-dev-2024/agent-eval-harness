@@ -25,6 +25,12 @@ BASE = str(httpx.URL(scheme="https", host="endpoint.invalid", path="/v1"))
         ("~~~Python3\nx = 1\n~~~", "x = 1\n"),
         ("```python\nx = 1", "x = 1\n"),
         ("```python\nx = 1\n```\n```python\ny = 2\n```", "x = 1\n\ny = 2\n"),
+        ("```python title=solution.py\nx = 1\n```", "x = 1\n"),
+        ("```{.python}\nx = 1\n```", "x = 1\n"),
+        (
+            "1. Code:\n\n   ```python\n   def f():\n       return 1\n   ```",
+            "def f():\n    return 1\n",
+        ),
     ],
 )
 def test_code_extraction(reply: str, expected: str) -> None:
@@ -122,7 +128,7 @@ def test_http_error_and_unknown_usage(
         if mode == "timeout":
             raise httpx.ReadTimeout("secret-value", request=request)
         if mode == "status":
-            return httpx.Response(401, text="secret-value")
+            return httpx.Response(429, text="secret-value")
         if mode == "invalid_json":
             return httpx.Response(200, text="not json")
         return httpx.Response(200, json={"choices": [{"message": {"content": "pass"}}]})
@@ -139,6 +145,26 @@ def test_http_error_and_unknown_usage(
             asyncio.run(runner.generate(load_task(task_path), workdir))
         assert "secret-value" not in str(caught.value)
         assert caught.value.timed_out == (mode == "timeout")
+        if mode == "status":
+            assert str(caught.value) == "API request failed with HTTP 429"
+
+
+def test_http_transport_error_names_the_failure(
+    task_path: Path, workdir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TEST_KEY", "secret-value")
+    monkeypatch.setenv("TEST_BASE", BASE)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("secret-value", request=request)
+
+    runner = HTTPRunner(
+        {"model": "test", "base_url_env": "TEST_BASE", "api_key_env": "TEST_KEY"},
+        transport=httpx.MockTransport(handler),
+    )
+    with pytest.raises(RunnerError) as caught:
+        asyncio.run(runner.generate(load_task(task_path), workdir))
+    assert str(caught.value) == "API request failed: ConnectError"
 
 
 def test_cli_writes_files_without_hidden_tests(task_path: Path, workdir: Path) -> None:
@@ -168,6 +194,12 @@ def test_cli_failure(timeout: bool, task_path: Path, workdir: Path) -> None:
     assert caught.value.timed_out == timeout
     if timeout:
         assert "partial" in caught.value.raw_output
+
+
+def test_cli_missing_command_is_a_runner_error(task_path: Path, workdir: Path) -> None:
+    runner = CLIRunner({"command": [str(workdir / "no-such-agent")]})
+    with pytest.raises(RunnerError, match="cannot start agent command: FileNotFoundError"):
+        asyncio.run(runner.generate(load_task(task_path), workdir))
 
 
 def test_mock_custom_fixture(task_path: Path, workdir: Path) -> None:

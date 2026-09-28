@@ -67,9 +67,11 @@ class HTTPRunner:
                 response.raise_for_status()
         except (httpx.TimeoutException, TimeoutError) as exc:
             raise RunnerError("API request timed out", timed_out=True) from exc
-        except (httpx.HTTPError, ValueError) as exc:
+        except httpx.HTTPStatusError as exc:
             # Never persist response bodies, URLs, headers, or credential-bearing exceptions.
-            raise RunnerError("API request failed") from exc
+            raise RunnerError(f"API request failed with HTTP {exc.response.status_code}") from exc
+        except (httpx.HTTPError, ValueError) as exc:
+            raise RunnerError(f"API request failed: {type(exc).__name__}") from exc
         try:
             data = response.json()
             if self.anthropic:
