@@ -1,0 +1,23 @@
+# Set both base URLs (including the API version path) and keys in your environment.
+# Replace model values with identifiers served by your endpoints.
+models:
+  - name: compatible-model
+    runner: openai
+    options:
+      model: replace-with-model-id
+      base_url_env: COMPATIBLE_BASE_URL
+      api_key_env: COMPATIBLE_API_KEY
+      max_tokens: 4096
+      timeout_s: 120
+  - name: messages-model
+    runner: anthropic
+    options:
+      model: replace-with-model-id
+      base_url_env: MESSAGES_BASE_URL
+      api_key_env: MESSAGES_API_KEY
+      max_tokens: 4096
+      timeout_s: 120
+tasks:
+  - ../tasks/*/task.yaml
+repeats: 5
+concurrency: 2

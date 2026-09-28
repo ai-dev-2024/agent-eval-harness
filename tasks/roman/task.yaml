@@ -1,0 +1,23 @@
+id: roman
+title: Canonical Roman numeral round-trip
+prompt: 'Implement to_roman(value: int) -> str and from_roman(text: str) -> int.
+
+  Accept integers 1..3999 (bool and non-integers raise ValueError). Use uppercase
+  canonical
+
+  Roman numerals with subtractive forms IV, IX, XL, XC, CD, CM. from_roman accepts
+  ONLY
+
+  nonempty uppercase canonical forms in this range, rejecting whitespace, lowercase,
+
+  unknown symbols, invalid repetitions, and noncanonical subtractive forms with ValueError.
+
+  Invalid input types also raise ValueError.'
+language: python
+entrypoint: solution.py
+hidden_tests:
+- hidden_tests.py
+timeout_s: 5
+tags:
+- validation
+- round-trip

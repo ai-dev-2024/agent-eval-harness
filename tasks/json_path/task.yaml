@@ -1,0 +1,30 @@
+id: json_path
+title: JSON-path-lite getter
+prompt: 'Implement get_path(data, path: str, default=None).
+
+  An empty path or ''$'' returns data. Otherwise support dot-separated ASCII identifiers
+
+  [A-Za-z_][A-Za-z0-9_]* and zero-based nonnegative bracket indices [digits] into
+  lists.
+
+  Examples: users[0].name, $.users[01].name, [0][1].x, $[0]. Indices may have leading
+  zeroes.
+
+  Keys apply only to dicts and indices only to lists. Missing keys, out-of-range indices,
+
+  or type mismatches return default (preserve identity). Present None is returned
+  as None.
+
+  Malformed syntax raises ValueError, even if an earlier component would be missing.
+
+  Reject whitespace, negative indices, quoted keys, wildcards, repeated/trailing dots,
+
+  and an identifier immediately after a bracket without a dot. Never mutate data.'
+language: python
+entrypoint: solution.py
+hidden_tests:
+- hidden_tests.py
+timeout_s: 5
+tags:
+- parsing
+- data

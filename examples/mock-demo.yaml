@@ -1,0 +1,13 @@
+models:
+  - name: mock-reference
+    runner: mock
+    options:
+      variant: reference
+  - name: mock-wrong
+    runner: mock
+    options:
+      variant: wrong
+tasks:
+  - ../tasks/*/task.yaml
+repeats: 2
+concurrency: 2

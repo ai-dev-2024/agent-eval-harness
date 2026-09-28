@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coding task comparison</title>
+<style>
+:root { color-scheme: light; font-family: system-ui, sans-serif; color: #172c40; background: #eef3f6; }
+body { max-width: 1100px; margin: 3rem auto; padding: 0 1.5rem; }
+h1 { font-size: 2.4rem; letter-spacing: -.04em; margin-bottom: .5rem; }
+h2 { margin-top: 2.5rem; }
+p, figcaption { color: #425970; line-height: 1.6; }
+.table-wrap { overflow-x: auto; border: 1px solid #ccd8e2; border-radius: .6rem; background: white; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: .9rem; border-bottom: 1px solid #e2e8ee; }
+thead { background: #172c40; color: white; }
+td:first-child, th:first-child { font-weight: 650; }
+.score { color: #056557; font-weight: 700; }
+figure { margin: 1rem 0; background: white; padding: 1.2rem; border-radius: .6rem; }
+svg { width: 100%; height: auto; max-height: 260px; }
+rect { fill: #167a79; } text { fill: #425970; font: 12px system-ui, sans-serif; }
+small { display: block; font-weight: normal; line-height: 1.5; }
+footer { border-top: 1px solid #ccd8e2; margin-top: 3rem; padding-top: 1rem; }
+</style>
+</head>
+<body>
+<h1>Coding task comparison</h1>
+<p>{{ summary.attempts }} attempts across {{ summary.task_ids|length }} tasks. Observed results from this run only.</p>
+<h2>Leaderboard</h2>
+<p>Pass rates average each observed task equally. Pass@k is shown only when every observed task for that model has at least k attempts. Models with different task sets are not directly comparable.</p>
+<div class="table-wrap"><table>
+<thead><tr><th scope="col">Model</th><th scope="col">Pass@1</th><th scope="col">Pass@k</th><th scope="col">Mean / median (s)</th><th scope="col">Tokens in / out</th><th scope="col">Reported USD</th></tr></thead>
+<tbody>{% for model in summary.models %}<tr>
+<td>{{ model.model }}<small>{{ model.passed }}/{{ model.attempts }} passes</small></td>
+<td class="score">{{ '%.1f'|format(model.pass_at_1 * 100) }}%</td>
+<td>{% for k, value in model.pass_at_k.items() %}<small>@{{ k }}: {{ '%.1f'|format(value * 100) }}%</small>{% endfor %}</td>
+<td>{{ '%.3f'|format(model.mean_wall_time_s) }} / {{ '%.3f'|format(model.median_wall_time_s) }}</td>
+<td>{{ model.input_tokens if model.input_tokens is not none else 'unknown' }} / {{ model.output_tokens if model.output_tokens is not none else 'unknown' }}<small>Reported: {{ model.input_tokens_reported }}/{{ model.attempts }} in; {{ model.output_tokens_reported }}/{{ model.attempts }} out</small></td>
+<td>{{ model.cost_usd if model.cost_usd is not none else 'unknown' }}<small>{{ model.cost_reported }}/{{ model.attempts }} reported</small></td>
+</tr>{% endfor %}</tbody></table></div>
+<p>Usage totals include only reported values; partial totals are not estimates of the missing usage. Timing includes generation and grading.</p>
+<h2>Per-task pass matrix</h2>
+<div class="table-wrap"><table><thead><tr><th scope="col">Task</th>{% for model in summary.models %}<th scope="col">{{ model.model }}</th>{% endfor %}</tr></thead>
+<tbody>{% for task in summary.task_ids %}<tr><th scope="row">{{ task }}</th>{% for model in summary.models %}<td>{% set matching = model.tasks|selectattr('task_id', 'equalto', task)|list %}{% if matching %}{{ matching[0].passed }}/{{ matching[0].attempts }}{% else %}—{% endif %}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>
+<h2>Timing distribution</h2>
+<p>One bar per attempt, sorted by duration within each model. All charts share a scale from 0 to {{ '%.3f'|format(max_time) }} seconds.</p>
+{% for model in summary.models %}<figure><figcaption>{{ model.model }}</figcaption>
+<svg viewBox="0 0 800 200" role="img" aria-label="Attempt durations for {{ model.model }}">
+<title>{{ model.model }}: individual attempt wall times</title>
+{% for duration in model.wall_times_s|sort %}
+<rect x="{{ 20 + loop.index0 * 760 / model.attempts }}" y="{{ 170 - duration / max_time * 145 }}" width="{{ 760 / model.attempts * 0.8 }}" height="{{ duration / max_time * 145 }}"><title>{{ '%.3f'|format(duration) }} seconds</title></rect>
+{% endfor %}<text x="20" y="190">0 s baseline</text><text x="20" y="15">{{ '%.3f'|format(max_time) }} s</text></svg>
+</figure>{% endfor %}
+<footer><p>agent-eval-harness · Schema {{ summary.schema_version }} · Hidden tests measure only their specified behavior.</p></footer>
+</body></html>

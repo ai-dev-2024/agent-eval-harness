@@ -1,0 +1,31 @@
+id: arithmetic
+title: Arithmetic tokenizer and evaluator
+prompt: 'Implement tokenize(text: str) -> list[str] and evaluate(text: str) -> float
+  without eval/exec.
+
+  Tokens: ASCII unsigned integers or decimals with digits on BOTH sides of the decimal
+  point,
+
+  and the single-character operators + - * / ( ). Ignore whitespace, preserve numeric
+  spelling.
+
+  Any other character or malformed number raises ValueError. tokenize('''') returns
+  [].
+
+  evaluate supports parentheses, unary + and - (including repeated signs), usual precedence,
+
+  and left-associative binary operators. Empty expressions, adjacent operands, trailing
+  tokens,
+
+  and unbalanced parentheses raise ValueError. Division by zero raises ZeroDivisionError.
+
+  No exponents, implicit multiplication, names, or function calls. Inputs are reasonably
+  small.'
+language: python
+entrypoint: solution.py
+hidden_tests:
+- hidden_tests.py
+timeout_s: 5
+tags:
+- parsing
+- precedence

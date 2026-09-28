@@ -1,0 +1,29 @@
+id: rate_limiter
+title: Per-key sliding-window rate limiter
+prompt: 'Implement SlidingWindowLimiter(limit: int, window_s: float) with allow(key,
+  now: float) -> bool.
+
+  limit must be a positive integer (not bool); window_s must be positive and finite,
+  else ValueError.
+
+  Each hashable key has independent history. Accept at most limit calls in (now-window_s,
+  now].
+
+  Discard accepted timestamps <= now-window_s. Denied calls do not consume capacity.
+
+  Times must be finite and nondecreasing PER KEY across ALL calls, including denied
+  calls;
+
+  raise ValueError on invalid time without changing state. Equal timestamps are allowed.
+
+  A new key can start at any finite time, including negative. Do not read the real
+  clock.'
+language: python
+entrypoint: solution.py
+hidden_tests:
+- hidden_tests.py
+timeout_s: 5
+tags:
+- state
+- time
+- boundaries

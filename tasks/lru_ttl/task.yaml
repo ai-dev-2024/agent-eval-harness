@@ -1,0 +1,28 @@
+id: lru_ttl
+title: LRU cache with fixed TTL
+prompt: 'Implement LRUCache(capacity: int, ttl: float, clock=time.monotonic).
+
+  capacity must be a positive integer (not bool); ttl must be positive and finite,
+  otherwise ValueError.
+
+  put(key, value) inserts or updates any hashable key and resets its expiry to clock()+ttl.
+
+  get(key, default=None) returns a live value and marks it most recently used, without
+  extending TTL.
+
+  At clock() >= expiry the entry is expired. Purge expired entries before eviction
+  and before len(cache).
+
+  When capacity is exceeded evict the least recently used live entry. Updating a key
+  refreshes recency.
+
+  len(cache) counts only live entries. Values may be None. The injected clock is nondecreasing.'
+language: python
+entrypoint: solution.py
+hidden_tests:
+- hidden_tests.py
+timeout_s: 5
+tags:
+- state
+- time
+- cache

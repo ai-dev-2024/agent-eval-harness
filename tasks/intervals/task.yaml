@@ -1,0 +1,23 @@
+id: intervals
+title: Merge closed integer intervals
+prompt: 'Implement merge_intervals(intervals) -> list[tuple[int, int]].
+
+  Input is an iterable of pairs of integer endpoints (bool is invalid). Return sorted,
+  disjoint closed
+
+  intervals, merging overlap and touching endpoints. A singleton interval is valid.
+  Negative endpoints
+
+  are valid. Raise ValueError for a pair of the wrong length, non-integer endpoints,
+  or start > end.
+
+  Do not mutate the input or its members. Empty input returns []. Support one-shot
+  iterables.'
+language: python
+entrypoint: solution.py
+hidden_tests:
+- hidden_tests.py
+timeout_s: 5
+tags:
+- sorting
+- boundaries
