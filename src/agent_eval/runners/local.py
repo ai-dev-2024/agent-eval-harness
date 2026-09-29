@@ -13,13 +13,17 @@ from agent_eval.specs import PositiveSeconds, StrictModel, TaskSpec, task_file
 
 
 class CLIOptions(StrictModel):
-    command: list[str] | str
+    command: list[str]
     timeout_s: PositiveSeconds = 120
+
+    @field_validator("command", mode="before")
+    @classmethod
+    def split_command(cls, value: Any) -> Any:
+        return shlex.split(value) if isinstance(value, str) else value
 
     @field_validator("command")
     @classmethod
-    def valid_command(cls, value: list[str] | str) -> list[str]:
-        parts = shlex.split(value) if isinstance(value, str) else value
+    def valid_command(cls, parts: list[str]) -> list[str]:
         if not parts or not parts[0]:
             raise ValueError("command cannot be empty")
         for part in parts:
@@ -41,13 +45,11 @@ class CLIRunner:
             f"Write your Python implementation to {task.entrypoint}.\n\n{task.prompt}",
             encoding="utf-8",
         )
-        command = self.options.command
-        assert isinstance(command, list)
         args = [
             part.format(
                 prompt_file=str(prompt_file), workdir=str(workdir), entrypoint=task.entrypoint
             )
-            for part in command
+            for part in self.options.command
         ]
         try:
             result = await run_process(args, workdir, self.options.timeout_s)

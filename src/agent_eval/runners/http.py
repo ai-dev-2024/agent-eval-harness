@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import os
 from pathlib import Path
 from typing import Any
@@ -84,12 +85,11 @@ class HTTPRunner:
                 raise ValueError("non-text response")
             usage = data.get("usage") or {}
             # Cost is deliberately not inferred from a pricing table.
-            cost = usage.get("cost_usd")
             result = Generation(
                 raw,
                 _tokens(usage.get(in_key)),
                 _tokens(usage.get(out_key)),
-                _cost(cost),
+                _cost(usage.get("cost_usd")),
             )
         except (KeyError, IndexError, TypeError, ValueError, AttributeError) as exc:
             raise RunnerError("API returned an invalid response") from exc
@@ -112,12 +112,13 @@ def _tokens(value: Any) -> int | None:
 
 
 def _cost(value: Any) -> float | None:
-    import math
-
     if value is None:
         return None
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError("invalid cost")
-    if value < 0 or not math.isfinite(value):
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or value < 0
+        or not math.isfinite(value)
+    ):
         raise ValueError("invalid cost")
     return float(value)

@@ -109,15 +109,14 @@ def summarize(attempts: list[Attempt], ks: tuple[int, ...] = (1, 2, 5, 10)) -> S
         tasks: dict[str, list[Attempt]] = defaultdict(list)
         for item in items:
             tasks[item.task_id].append(item)
-        scores = [
-            TaskScore(
-                task_id=task,
-                attempts=len(rows),
-                passed=sum(row.outcome == "pass" for row in rows),
-                pass_at_1=sum(row.outcome == "pass" for row in rows) / len(rows),
+        scores = []
+        for task, rows in sorted(tasks.items()):
+            passed = sum(row.outcome == "pass" for row in rows)
+            scores.append(
+                TaskScore(
+                    task_id=task, attempts=len(rows), passed=passed, pass_at_1=passed / len(rows)
+                )
             )
-            for task, rows in sorted(tasks.items())
-        ]
         estimates = {
             k: statistics.mean(pass_at_k(s.attempts, s.passed, k) for s in scores)
             for k in sorted(set(ks) | {1})

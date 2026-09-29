@@ -52,7 +52,7 @@ def describe_error(exc: BaseException) -> str:
         mark = exc.problem_mark
         message = f"invalid YAML at line {mark.line + 1}, column {mark.column + 1}: {exc.problem}"
     elif isinstance(exc, OSError):
-        message = f"{exc.strerror or type(exc).__name__}"
+        message = exc.strerror or type(exc).__name__
         if exc.filename is not None:
             message += f": {exc.filename}"
     elif isinstance(exc, yaml.YAMLError):

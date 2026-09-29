@@ -76,7 +76,7 @@ def test_invalid_config(config_path: Path, field: str, value: int) -> None:
 @pytest.mark.parametrize("command", ["", [], ["echo", "{bad}"], ["echo", "{workdir!r}"]])
 def test_invalid_command(command: list[str] | str) -> None:
     with pytest.raises(ValueError):
-        CLIOptions(command=command)
+        CLIOptions.model_validate({"command": command})
 
 
 def test_registry(task_path: Path) -> None:

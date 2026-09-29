@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 import yaml
 
+from agent_eval import __version__
 from agent_eval.cli import main
 from agent_eval.engine import run_config
 from agent_eval.results import load_attempts
@@ -31,7 +32,7 @@ def test_cli_end_to_end(
         for filename in ("model-output.txt", "test.log", "solution.py"):
             assert (out / row.artifacts / filename).is_file()
     metadata = json.loads((out / "metadata.json").read_text())
-    assert metadata["harness_version"] == "1.0.0"
+    assert metadata["harness_version"] == __version__
     for files in metadata["task_hashes"].values():
         for path, digest in files.items():
             assert hashlib.sha256(Path(path).read_bytes()).hexdigest() == digest
@@ -79,7 +80,7 @@ def test_cli_listing_validation_and_errors(
         text=True,
         check=True,
     )
-    assert result.stdout.strip() == "1.0.0"
+    assert result.stdout.strip() == __version__
 
 
 def test_default_output(config_path: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 from importlib.resources import files
 from typing import Literal
 
@@ -11,9 +12,11 @@ ReportFormat = Literal["md", "html", "json"]
 
 
 def _md(value: str) -> str:
-    import html
-
     return html.escape(value).replace("|", "&#124;").replace("\n", " ").replace("\r", " ")
+
+
+def _count(value: int | None) -> str:
+    return "unknown" if value is None else str(value)
 
 
 def format_usd(value: float | None) -> str:
@@ -23,10 +26,10 @@ def format_usd(value: float | None) -> str:
     return f"{value:.6f}".rstrip("0").rstrip(".")
 
 
-def render_report(summary: Summary, format: ReportFormat) -> str:
-    if format == "json":
+def render_report(summary: Summary, fmt: ReportFormat) -> str:
+    if fmt == "json":
         return summary_json(summary)
-    if format == "md":
+    if fmt == "md":
         lines = [
             "# Coding task comparison",
             "",
@@ -39,11 +42,10 @@ def render_report(summary: Summary, format: ReportFormat) -> str:
         ]
         for model in summary.models:
             estimates = ", ".join(f"{k}: {v:.1%}" for k, v in model.pass_at_k.items())
-            usage = f"{model.input_tokens} / {model.output_tokens}"
             lines.append(
                 f"| {_md(model.model)} | {model.pass_at_1:.1%} | {estimates} | "
                 f"{model.mean_wall_time_s:.3f} | {model.median_wall_time_s:.3f} | "
-                f"{usage.replace('None', 'unknown')} | "
+                f"{_count(model.input_tokens)} / {_count(model.output_tokens)} | "
                 f"{format_usd(model.cost_usd)} |"
             )
         lines.extend(["", "## Per-task passes / attempts", ""])
@@ -68,8 +70,8 @@ def render_report(summary: Summary, format: ReportFormat) -> str:
                 f"{model.output_tokens_reported}/{model.cost_reported} of {model.attempts}."
             )
         return "\n".join(lines) + "\n"
-    if format != "html":
-        raise ValueError(f"unsupported report format: {format}")
+    if fmt != "html":
+        raise ValueError(f"unsupported report format: {fmt}")
     environment = Environment(autoescape=select_autoescape(default=True), undefined=StrictUndefined)
     environment.filters["usd"] = format_usd
     template = files("agent_eval").joinpath("templates/report.html").read_text(encoding="utf-8")
