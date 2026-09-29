@@ -1,226 +1,98 @@
 # agent-eval-harness
 
+[![CI](https://github.com/ai-dev-2024/agent-eval-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/ai-dev-2024/agent-eval-harness/actions/workflows/ci.yml)
+![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
+![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)
+
+A CLI and Python library for comparing coding models and coding-agent commands on the same
+tasks. Each attempt writes a Python module. The harness then grades it against pytest files the
+model never saw, and keeps the evidence: raw output, generated source, test log, and a JSONL
+record.
+
 ## Problem
 
-Comparing coding models by reading a few plausible answers is difficult to reproduce and easy to
-misjudge. This CLI and typed Python library run the same small task through several models or
-coding-agent commands, grade the produced files against withheld pytest tests, and preserve the
-evidence behind each result. It is built around verification and validation: explicit contracts,
-boundary tests, repeatable execution, and honest accounting of missing measurements.
-
-## Features
-
-- Python 3.11+; strict typed library and an `argparse` CLI.
-- OpenAI-compatible Chat Completions and Anthropic Messages over `httpx`; no vendor SDKs.
-- Generic external CLI runner and deterministic offline fixtures.
-- Fresh workdirs, tests copied after generation, subprocess timeouts, and XML result parsing.
-- Bounded attempt concurrency and repeated model × task trials.
-- Versioned JSONL, task hashes, resolved config, raw outputs, generated source, and test logs.
-- Pass@1, unbiased pass@k, mean/median wall time, and reported tokens and costs.
-- Markdown, JSON, and self-contained HTML with a pass matrix and inline SVG timing bars.
-- Six task families: TTL-aware LRU cache, interval merging, arithmetic parsing, sliding-window
-  rate limiting, Roman numeral round-trips, and a JSON-path-lite getter.
+Comparing models by reading a few of their answers gives results you can't reproduce, and
+people tend to believe the answer that looks most convincing. Evaluation scripts written in a
+hurry add other problems: tests left in the agent's workspace, a single sample reported as
+"pass@k", and missing token counts shown as zero. This project handles those cases explicitly.
+Tests are copied in only after generation. Pass@k uses the unbiased estimator over repeated
+attempts. Usage and cost stay `unknown` unless the endpoint reports them.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    Config[Resolved config + task specs] --> Runner[Runner: API / CLI / mock]
-    Runner --> Sandbox[Fresh temporary workdir]
-    Sandbox --> Grader[Copy hidden tests; run pytest]
-    Grader --> Results[JSONL + logs + hashes]
-    Results --> Report[Aggregation + HTML / MD / JSON]
+    Config[run config + task.yaml files] --> Engine
+    Engine -->|one job per model × task × repeat| Runner[Runner<br/>openai / anthropic / cli / mock]
+    Runner -->|writes entrypoint| Workdir[fresh temp workdir]
+    Workdir --> Grader[grader: copy hidden tests,<br/>pytest subprocess, parse JUnit XML]
+    Grader --> Artifacts[results.jsonl + per-attempt artifacts]
+    Artifacts --> Summary[summarize: macro pass@1, pass@k,<br/>timing, reported usage]
+    Summary --> Reports[report.html / Markdown / JSON]
 ```
 
-The runner sees the prompt and target filename. The harness owns grading and records every
-completed attempt, including failed generations. Temporary workdirs are deleted after artifacts
-are saved. Time waiting for a concurrency slot is excluded from attempt timing.
+| Module | Responsibility |
+| --- | --- |
+| `specs.py` | Pydantic models for `task.yaml` and run configs; glob discovery; path containment checks |
+| `engine.py` | Builds jobs, runs them under a semaphore in an `asyncio.TaskGroup`, writes artifacts and hashes, redacts keys |
+| `runners/` | `Runner` protocol and registry; HTTP adapters on raw `httpx`; external CLI runner; offline mock |
+| `grader.py` | Copies tests into the workdir after generation, runs pytest in an isolated interpreter, maps JUnit XML to an outcome |
+| `process.py` | Subprocess runner with timeout, output cap, and process-group kill |
+| `results.py` | JSONL schema, loading, pass@k, per-model summaries |
+| `report.py` | Markdown, JSON, and self-contained HTML (Jinja2 template with inline SVG) |
+
+Runtime dependencies: pydantic, PyYAML, httpx, jinja2. pytest is the optional `grade` extra.
 
 ## Quickstart
 
-From a checkout, install the package and grading dependency:
-
 ```sh
-python3 -m venv .venv
-. .venv/bin/activate
+python3 -m venv .venv && . .venv/bin/activate
 python -m pip install -e '.[grade]'
-```
-
-Run the offline demo in one command:
-
-```sh
 agent-eval run examples/mock-demo.yaml
 ```
 
-The command prints the path to `runs/<timestamp>/report.html`. Open that file in a browser.
-This demo compares reference fixtures with deliberately wrong fixtures; it measures the harness,
-not any model's capabilities. It needs no credentials or model network access.
+The demo needs no network access or credentials. It runs six tasks × two mock "models" × two
+repeats. `mock-reference` submits each task's reference solution and `mock-wrong` submits a
+module that returns `None` for everything, so the run tests the harness, not a model. Open the
+printed `runs/<timestamp>/report.html` in a browser.
 
-To choose the run directory and render other report formats:
+Other commands:
 
 ```sh
-agent-eval run examples/mock-demo.yaml --out runs/my-demo
-agent-eval report runs/my-demo/results.jsonl --format md --out runs/my-demo/report.md
-agent-eval report runs/my-demo/results.jsonl --format json --k 2
+agent-eval report runs/<run>/results.jsonl --format md    # or html, json; --k N (repeatable)
 agent-eval list-tasks
-agent-eval validate-task tasks/lru_ttl/task.yaml
+agent-eval validate-task tasks/lru_ttl/task.yaml          # grade the task's own reference
 ```
 
-Output directories must be new; runs never overwrite existing evidence. A completed evaluation
-exits 0 even if attempts fail. `validate-task` exits 1 for a failing reference, input/usage errors
-exit 2, and interruption exits 130. Completed JSONL lines remain usable after interruption.
-
-For development, `make install` installs `.[dev]`, including pytest, coverage, linting, typing,
-and build tools. The four library dependencies are pydantic v2, PyYAML, httpx, and jinja2.
-The `grade` extra installs pytest; report-only installations can use `pip install .`.
-Example tasks and configs live in the source checkout, rather than the installed wheel.
-
-### Real model endpoints
-
-Edit the placeholder model identifiers in `examples/real-models.yaml`. Supply endpoint base URLs
-and keys through the environment; each base URL must include the service's API version path.
-The adapters append `/chat/completions` or `/messages` respectively.
+To evaluate real endpoints, put model ids in `examples/real-models.yaml` and provide URLs and
+keys through the environment. The config holds only the environment variable names. Live runs
+may cost money.
 
 ```sh
-export COMPATIBLE_BASE_URL='<compatible endpoint base URL including version path>'
-export MESSAGES_BASE_URL='<messages endpoint base URL including version path>'
-read -r -s -p 'Compatible API key: ' COMPATIBLE_API_KEY; echo
-read -r -s -p 'Messages API key: ' MESSAGES_API_KEY; echo
-export COMPATIBLE_API_KEY MESSAGES_API_KEY
+export COMPATIBLE_BASE_URL=... MESSAGES_BASE_URL=...   # include the API version path
+read -rs COMPATIBLE_API_KEY && read -rs MESSAGES_API_KEY && export COMPATIBLE_API_KEY MESSAGES_API_KEY
 agent-eval run examples/real-models.yaml --out runs/real-comparison
 ```
 
-The key prompts above use bash. Live evaluations may incur charges. Nothing in the demo or test
-suite calls a live model. Keys are read at request time; known configured key values are redacted
-from saved artifacts. API failures omit response bodies, headers, and URLs. Put only environment
-variable names in config, never literal keys in prompts, commands, or options.
-
-## Config reference
-
-Task globs resolve relative to the **config file**, not the shell's working directory. Every glob
-must match, duplicate file matches are deduplicated, and task ids and model names must be unique.
-Unknown config fields and built-in runner options are rejected.
-
-```yaml
-models:
-  - name: local-reference
-    runner: mock
-    options:
-      variant: reference
-tasks:
-  - ../tasks/*/task.yaml
-repeats: 2
-concurrency: 2
-```
-
-| Field | Meaning |
-| --- | --- |
-| `models` | Nonempty list of `name`, registered `runner`, and runner-specific `options` |
-| `tasks` | Nonempty list of task YAML globs; recursive `**` is supported |
-| `repeats` | Positive integer; attempts per model × task; default 1 |
-| `concurrency` | Positive integer; maximum active generation-plus-grading attempts; default 1 |
-
-| Runner | Options |
-| --- | --- |
-| `openai` | Required `model`, `base_url_env`, `api_key_env`; optional `max_tokens` (4096), `timeout_s` (120), `temperature` (omitted by default) |
-| `anthropic` | Same fields; Messages API with version header `2023-06-01` |
-| `cli` | Required `command` (argv list or shell-like string); optional `timeout_s` (120) |
-| `mock` | `variant`: `reference` (default) or `wrong`; optional `fixtures`: task-id → task-relative Python file |
-
-API requests are non-streaming and have a total wall-clock deadline. Compatible services must
-support the Chat Completions fields
-used here, including `max_tokens`. A response can report `usage.cost_usd`; otherwise cost stays
-unknown. Neither standard adapter invents cost from token counts. Unreported tokens also stay
-unknown, and report totals show how many attempts supplied each measurement.
-
-CLI arguments support `{prompt_file}`, `{workdir}`, and `{entrypoint}` placeholders. Prefer an
-argv list to avoid quoting ambiguity. No shell is launched; pipes, redirection, and environment
-assignments are not interpreted. Escape literal braces as `{{` and `}}`. For example:
-
-```yaml
-models:
-  - name: external-agent
-    runner: cli
-    options:
-      command: [agent-command, --prompt-file, '{prompt_file}', --output, '{entrypoint}']
-      timeout_s: 180
-tasks: [../tasks/*/task.yaml]
-```
-
-Replace `agent-command` and flags with those supported by your installed tool. The command runs
-inside the fresh workdir and must write the entrypoint itself; stdout is saved, not treated as code.
-Standard input is `/dev/null`, so the command must not wait for interactive input. On POSIX, background
-processes it leaves in its process group are killed when it exits.
-The prompt file contains the task instructions. CLI tools inherit the parent environment for
-authentication; grader processes receive only a minimal environment without API credentials.
-
-## Writing a task
-
-Create a directory with `task.yaml`, `reference.py`, and one or more pytest files:
-
-```yaml
-id: answer
-title: Return an answer
-prompt: Implement answer() returning the integer 42.
-language: python
-entrypoint: solution.py
-hidden_tests: [hidden_tests.py]
-reference: reference.py
-timeout_s: 5
-tags: [intro, functions]
-```
-
-`reference` defaults to `reference.py`, `language` to `python`, `timeout_s` to 10, and `tags` to `[]`.
-Entrypoints must be plain Python module filenames. Test and reference paths must stay inside the
-task directory, including after resolving symlinks. References are required for validation and the
-default mock fixture; real model evaluations need only the spec and tests.
-
-The reference exports the API specified by the prompt:
-
-```python
-def answer() -> int:
-    return 42
-```
-
-The hidden test imports the generated entrypoint:
-
-```python
-from solution import answer
-
-
-def test_answer() -> None:
-    assert answer() == 42
-```
-
-Run `agent-eval validate-task path/to/task.yaml`, then add the spec to a run config. Test files
-must be self-contained: only the listed files are copied, under unique test filenames. Shared
-`conftest.py`, auxiliary assets, and third-party pytest plugins are not loaded. Example solutions
-need only the standard library. Specify all expected error types and boundary semantics in the
-prompt; hidden tests should assess that contract rather than surprise requirements.
+Config fields, runner options, the task format, the JSONL schema and exit codes are documented
+in [docs/reference.md](docs/reference.md).
 
 ## Sample output
 
-This is the **deterministic offline demo, not a model benchmark**. `mock-reference` writes each
-task's reference solution; `mock-wrong` writes a deliberately wrong module whose every attribute is
-a function returning `None`. The run checks that the harness separates correct from incorrect
-code end to end. The scores say nothing about any model. Timings come from one local run and vary
-by machine.
+Captured from the offline demo on a development machine. Timings will differ on yours.
 
 ```console
 $ agent-eval run examples/mock-demo.yaml --out /tmp/aeh-demo
 Completed 24 attempts; 12 passed. Report: /tmp/aeh-demo/report.html
 $ agent-eval report /tmp/aeh-demo/results.jsonl --format md
-```
-
-```markdown
 # Coding task comparison
 
 24 attempts. Pass rates are task-macro-averaged. Missing usage is unknown.
 
 | Model | Pass@1 | Pass@k | Mean (s) | Median (s) | Input / output tokens | Cost (USD) |
 | --- | ---: | --- | ---: | ---: | --- | --- |
-| mock-reference | 100.0% | 1: 100.0%, 2: 100.0% | 0.274 | 0.271 | unknown / unknown | unknown |
-| mock-wrong | 0.0% | 1: 0.0%, 2: 0.0% | 0.309 | 0.308 | unknown / unknown | unknown |
+| mock-reference | 100.0% | 1: 100.0%, 2: 100.0% | 0.286 | 0.283 | unknown / unknown | unknown |
+| mock-wrong | 0.0% | 1: 0.0%, 2: 0.0% | 0.319 | 0.319 | unknown / unknown | unknown |
 
 ## Per-task passes / attempts
 
@@ -239,169 +111,81 @@ Reported totals may be partial. Usage coverage (attempts with input/output/cost)
 - mock-wrong: 0/0/0 of 12.
 ```
 
-Token and cost columns are `unknown` because mock fixtures report no usage; the harness does not
-estimate it. Each attempt is one JSONL line, for example a wrong fixture failing all 31
-arithmetic tests:
+Token and cost columns show `unknown` because mock runners report no usage. One line of
+`results.jsonl`, for the wrong fixture failing all 31 arithmetic tests:
 
 ```json
-{"schema_version":"1.0","attempt_id":"attempt-000013","model":"mock-wrong","runner":"mock","task_id":"arithmetic","repeat":1,"outcome":"fail","tests_passed":0,"tests_total":31,"wall_time_s":0.3294831830135081,"generation_time_s":0.00031066499650478363,"grading_time_s":0.32883776602102444,"input_tokens":null,"output_tokens":null,"cost_usd":null,"error":null,"artifacts":"attempts/attempt-000013"}
+{"schema_version":"1.0","attempt_id":"attempt-000013","model":"mock-wrong","runner":"mock","task_id":"arithmetic","repeat":1,"outcome":"fail","tests_passed":0,"tests_total":31,"wall_time_s":0.3508746569859795,"generation_time_s":0.0001566419959999621,"grading_time_s":0.35034779299166985,"input_tokens":null,"output_tokens":null,"cost_usd":null,"error":null,"artifacts":"attempts/attempt-000013"}
 ```
 
-The same Markdown report is committed as [docs/sample-report.md](docs/sample-report.md). The run
-directory also contains `report.html`, `summary.json`, `metadata.json`, the resolved config, and
-per-attempt artifacts.
+The bundled tasks, with hidden test counts from `agent-eval validate-task`:
 
-## Results and interpretation
-
-Each run contains:
-
-```text
-config.resolved.yaml
-metadata.json                 # harness/Python versions, platform, timestamp, SHA-256 hashes
-results.jsonl                 # one schema_version="1.0" object per completed attempt
-summary.json
-report.html
-attempts/attempt-000001/
-    model-output.txt          # returned text or combined CLI stdout/stderr; key-redacted
-    solution.py               # generated entrypoint, when present; key-redacted
-    test.log                  # combined pytest stdout/stderr
-```
-
-Metadata hashes the source config, task specs, hidden files, available references, and selected
-custom mock fixtures. Each
-attempt records model/runner/task, repeat, outcome, passed/total tests, wall/generation/grading
-time in seconds, nullable token counts and USD cost, error category, and artifact location.
-JSONL is written and flushed in completion order; ids reflect deterministic scheduling order.
-Hashing records provenance, not a guarantee that a remote service will reproduce an answer.
-
-| Outcome | Meaning |
-| --- | --- |
-| `pass` | pytest exits 0; at least one test ran; every reported case passed |
-| `fail` | Test failures, or skipped cases that prevent complete verification |
-| `error` | Generation failure, missing source, collection/setup error, invalid XML, or pytest infrastructure failure |
-| `timeout` | Generation or grading exceeded its own timeout; no completed test counts are claimed |
-
-`tests_total` counts XML test cases, including skipped cases and collection errors; it is not the
-number of assertions. A collection failure may prevent the full intended test suite from running.
-Unexpected failures remain in the denominator. Reports average task pass rates equally; when
-task sets differ between models, the matrix exposes that difference and scores need care.
-
-For n attempts with c successes on one task, pass@k is:
-
-```text
-1 - C(n-c, k) / C(n, k), for 1 <= k <= n
-```
-
-Task estimates are averaged equally. Default reports include k in 1, 2, 5, 10 only where all
-observed tasks for a model have enough attempts; use repeated `--k` flags for other choices.
-Pass@1 is c/n, averaged over tasks, rather than the outcome of an arbitrarily selected first trial.
-The unbiased interpretation assumes independent, identically distributed samples for each task.
-Deterministic fixtures and correlated agent sessions do not establish that assumption. Reports
-describe observed samples; they do not provide confidence intervals or broad capability claims.
-
-## Library and extensions
-
-```python
-import asyncio
-from pathlib import Path
-from agent_eval.engine import run_config
-from agent_eval.results import summarize
-from agent_eval.report import render_report
-
-attempts = asyncio.run(run_config(Path("examples/mock-demo.yaml"), Path("runs/library-demo")))
-markdown = render_report(summarize(attempts), "md")
-```
-
-`agent_eval.runners.base.Runner` is a protocol with asynchronous
-`generate(task: TaskSpec, workdir: Path) -> Generation`. Register a factory with
-`register_runner(name, factory)` before `run_config`; its signature is
-`factory(options: dict[str, Any], *, task_path: Path) -> Runner`. Factories validate their own
-options. Runners write files, return raw output and optional usage, and raise `RunnerError` for
-sanitized generation errors. A custom runner must enforce its generation deadline and cooperate
-with cancellation. Registration is process-local; the CLI includes the four built-in runners.
+| Task | Contract | Tests |
+| --- | --- | ---: |
+| `arithmetic` | Tokenize and evaluate `+ - * / ( )` expressions without `eval` | 31 |
+| `intervals` | Merge closed integer intervals | 13 |
+| `json_path` | `a.b[0].c`-style lookup into parsed JSON, with a default | 26 |
+| `lru_ttl` | LRU cache with fixed TTL and an injectable clock | 11 |
+| `rate_limiter` | Per-key sliding-window rate limiter | 11 |
+| `roman` | Canonical Roman numeral encode/decode round-trip | 33 |
 
 ## Design decisions
 
-- **Withhold tests until generation ends.** This avoids putting answers or assertions directly
-  in the agent workspace while it solves the task. It reduces accidental leakage, but is not
-  adversarial access control: the source checkout remains accessible on the host.
-- **Use the unbiased pass@k estimator.** Counting whether any observed attempt passed mixes
-  different sample sizes. The combinatorial estimator uses all samples without pretending
-  that unsupported k values can be estimated.
-- **Use subprocess isolation.** Separate interpreters avoid module-cache and global-state
-  contamination between attempts. Each command gets `/dev/null` as stdin, and its lifetime is
-  that of the launched process: when that process exits, times out, or is cancelled, the harness
-  kills the remaining process group on POSIX. Output uses a harness-owned pipe, so a descendant
-  that leaves the group and holds the pipe open cannot stall the run. This provides operational
-  separation, not containment of hostile Python code.
-- **Avoid vendor SDKs.** Small HTTP adapters expose the payloads under test, keep dependencies
-  small, and allow full offline protocol tests with `httpx.MockTransport`.
-- **Keep missing measurements explicit.** No guessed token usage, pricing, or model scores.
-  Time includes grading overhead; parallel runs share resources and are not pure model latency tests.
-
-## Security: untrusted model code
-
-Tests execute model-produced Python with the permissions of the harness user. A temporary
-directory and a subprocess are **not a security sandbox**. Code can access host files and the
-network, consume resources, or tamper with grading. CLI agents can also read files outside their
-workdir. Do not run untrusted generations directly on a sensitive host.
-
-Use Docker on a disposable machine, avoid sensitive bind mounts, and restrict resources/network
-access as appropriate. The supplied image runs as a non-root user. For the offline demo:
-
-```sh
-docker build -t agent-eval-harness .
-docker run --rm --network none --memory 512m --cpus 2 --pids-limit 128 \
-  --read-only --tmpfs /tmp:rw,nosuid,nodev,size=256m \
-  agent-eval-harness run examples/mock-demo.yaml --out /tmp/demo
-```
-
-That disposable run removes its report when the container exits. To retrieve a report without a
-host bind mount, use a named container with its writable output directory instead:
-
-```sh
-docker create --name eval-demo --network none --memory 512m --cpus 2 --pids-limit 128 \
-  agent-eval-harness run examples/mock-demo.yaml --out runs/demo
-docker start -a eval-demo
-docker cp eval-demo:/app/runs/demo ./container-demo
-docker rm eval-demo
-```
-
-Real API generation requires network access. This image runs the whole harness in one container
-and does not isolate generation from grading. Tests are public fixtures withheld from the attempt
-directory, not secret benchmark material. Saved source and logs can contain sensitive prompt data;
-review them before sharing. Literal configured API-key redaction is a precaution, not a general
-secret detector.
+- **Tests are withheld until generation finishes.** They are copied into a temporary subdirectory
+  of the workdir only after the runner returns. This means an agent can't read or edit the tests
+  in its workspace. It is not access control: a CLI agent can still read the repository on the
+  host.
+- **Pass@k uses the unbiased estimator over n attempts per task.** "Did any of k attempts pass"
+  depends on how many attempts happened to run. The combinatorial form uses all n attempts and
+  is only reported for k ≤ n on every task. Scores are macro-averaged so that a task with more
+  attempts doesn't count for more.
+- **Each grading run is its own subprocess** (`python -I`, `--noconftest`, plugin autoload off,
+  config file `/dev/null`). State from one attempt can't leak into the next, and a generated
+  `conftest.py` or `pytest.ini` has no effect. The process group is killed on exit, timeout or
+  cancellation. The output pipe belongs to the harness, not asyncio, so a daemonized grandchild
+  holding it open can't hang the run.
+- **No vendor SDKs.** Both HTTP protocols share one `httpx` class in `runners/http.py`. The
+  request payload is visible in the code, and protocol tests use `httpx.MockTransport` with no network.
+- **Unknown usage stays unknown.** Missing token counts are `null`, not 0. Cost comes only from a
+  reported `usage.cost_usd`. Reports show how many attempts reported each figure so partial
+  totals are visible.
+- **Every run gets a new directory with provenance.** Runs never overwrite each other, and
+  `metadata.json` stores SHA-256 hashes of the config, task specs, tests and references. JSONL is
+  flushed after each attempt, so an interrupted run keeps its completed rows.
 
 ## Limitations
 
-- Python tasks only, designed as small standalone modules, with no dependency installation.
-- Public fixtures may be memorized; only specified behavior is tested, not code quality or general ability.
-- No container per attempt, memory or disk limits, filesystem jail, or network isolation.
-- Captured stdout/stderr is limited to the first 1 MB per process; the rest is drained and dropped.
-- POSIX process-group cleanup is stronger than the direct-child cleanup available on other platforms.
-- No automatic retries or rate-limit backoff; errors remain visible as attempts.
-- No run resume, service-side seed guarantee, streaming responses, or built-in agent sessions.
-- Only the entrypoint is archived from a CLI workdir; additional generated files are not retained.
-- Results may vary with package versions and concurrent machine load; dependency bounds are not a lockfile.
-- Cost totals rely on an explicitly returned `usage.cost_usd`; most endpoints omit it.
+- **No sandbox.** Generated code runs as your user with full filesystem and network access. Run
+  untrusted generations only in a disposable container or VM (see [SECURITY.md](SECURITY.md)
+  for a `docker run` with the network, memory and PIDs restricted).
+- Python only. Each task is a single standalone module, and no dependencies are installed.
+- The six tasks are small and public. Models may have memorized them, and the tests check only the
+  stated contract, not code quality.
+- No retries, rate-limit backoff, streaming, or resuming an interrupted run.
+- Only the entrypoint is archived from a CLI agent's workdir.
+- Captured output is capped at 1 MB per process.
+- Process-group cleanup is POSIX-only. On Windows only the direct child is killed.
+- Most endpoints don't return `usage.cost_usd`, so cost is usually `unknown`.
 
 ## Roadmap
 
-- Multi-language task execution.
-- Docker-per-attempt sandboxing with resource and network controls.
-- SWE-style repository tasks and patch-based artifacts.
-- Broader cost tracking with explicit pricing provenance and reported-versus-estimated labeling.
+- One container per attempt, with network, memory and filesystem limits.
+- Tasks in languages other than Python.
+- Repository-level tasks graded from a patch (SWE-bench style).
+- Optional cost estimates from a versioned pricing file, labelled separately from reported cost.
 
 ## Development
 
 ```sh
-make install
-make lint typecheck test
+make install                  # venv + editable install with dev extras
+make lint typecheck test      # ruff check/format, mypy --strict, pytest with branch coverage
 make demo
 ```
 
-CI is configured for Python 3.11 and 3.12, checks coverage at 85% or higher, builds the package and
-Docker image, runs the offline demo, and uploads its HTML report.
-See [CONTRIBUTING.md](CONTRIBUTING.md).
-Distributed under the [MIT license](LICENSE).
+Last local run: `105 passed`, total branch coverage 98.34%. The gate in `pyproject.toml` is 85%.
+CI (`.github/workflows/ci.yml`) runs these checks on Python 3.11 and 3.12 and builds the sdist
+and wheel. It also runs the offline demo from a non-editable install and uploads its HTML
+report, then builds the Docker image and runs the demo inside it with `--network none`.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) and
+[CHANGELOG.md](CHANGELOG.md). MIT licensed.

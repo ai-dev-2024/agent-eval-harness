@@ -4,8 +4,8 @@
 
 | Model | Pass@1 | Pass@k | Mean (s) | Median (s) | Input / output tokens | Cost (USD) |
 | --- | ---: | --- | ---: | ---: | --- | --- |
-| mock-reference | 100.0% | 1: 100.0%, 2: 100.0% | 0.274 | 0.271 | unknown / unknown | unknown |
-| mock-wrong | 0.0% | 1: 0.0%, 2: 0.0% | 0.309 | 0.308 | unknown / unknown | unknown |
+| mock-reference | 100.0% | 1: 100.0%, 2: 100.0% | 0.286 | 0.283 | unknown / unknown | unknown |
+| mock-wrong | 0.0% | 1: 0.0%, 2: 0.0% | 0.319 | 0.319 | unknown / unknown | unknown |
 
 ## Per-task passes / attempts
 

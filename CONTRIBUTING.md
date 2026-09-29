@@ -1,18 +1,39 @@
 # Contributing
 
-Use Python 3.11 or later. Run `make install`, then `make lint typecheck test`.
-Run `make demo` for an offline end-to-end check. No API credentials are needed.
+## Setup and checks
 
-Keep runtime dependencies small and annotate public and internal functions. Add focused tests
-for behavior changes, including failures and boundary cases. The coverage gate is 85%, with
-branches measured. HTTP tests must use `httpx.MockTransport`; never make live model calls in tests.
+```sh
+make install                  # Python 3.11+; creates .venv with the dev extras
+make lint typecheck test      # ruff check + format check, mypy --strict, pytest
+make demo                     # offline end-to-end run
+```
 
-For a new task, specify behavior precisely, add an independent `reference.py` and hidden pytest
-files, and run `agent-eval validate-task path/to/task.yaml`. Include invalid inputs, exact boundaries,
-and at least one case that defeats a plausible incomplete solution. Public task fixtures can be
-memorized; do not describe their scores as evidence of general coding ability.
+CI runs the same checks on Python 3.11 and 3.12. Pull requests should pass all of them.
 
-Explain the problem, the behavior change, and validation in each proposed change. Keep reports
-and credentials out of commits. Discuss security issues privately with the repository maintainer
-through the repository's private reporting mechanism if available; do not publish credentials
-or a working exploit in a public issue.
+## Code
+
+- Keep runtime dependencies to the current four (pydantic, PyYAML, httpx, jinja2) unless
+  there is a strong reason to add one.
+- `mypy --strict` covers `src/` and `tests/`.
+- Behaviour changes need tests, including the failure path. Coverage is measured with branches
+  and must stay at or above 85% (`pyproject.toml`).
+- Tests must not touch the network. Use `httpx.MockTransport` for HTTP runners and the `mock`
+  runner or a registered fake for engine tests.
+- Never save response bodies, request URLs or headers from HTTP errors. They can contain
+  credentials.
+
+## Tasks
+
+A new task needs a precise prompt, an independent `reference.py`, and hidden pytest files. See
+[docs/reference.md](docs/reference.md#writing-a-task). Before submitting:
+
+- `agent-eval validate-task tasks/<id>/task.yaml` passes;
+- the tests cover invalid input and exact boundaries, and include at least one case that a
+  plausible but incomplete solution fails;
+- every behaviour the tests check is stated in the prompt.
+
+## Pull requests
+
+Describe the problem, the change, and how you verified it. Don't commit `runs/`, `dist/`,
+coverage files or anything containing credentials. Report security issues as described in
+[SECURITY.md](SECURITY.md), not in a public issue.
