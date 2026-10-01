@@ -1,6 +1,6 @@
 # agent-eval-harness
 
-[![CI](https://github.com/ai-dev-2024/agent-eval-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/ai-dev-2024/agent-eval-harness/actions/workflows/ci.yml)
+[![CI](https://github.com/muhib-karim/agent-eval-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/muhib-karim/agent-eval-harness/actions/workflows/ci.yml)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)
 
