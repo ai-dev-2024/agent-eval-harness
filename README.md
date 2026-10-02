@@ -3,11 +3,16 @@
 [![CI](https://github.com/muhib-karim/agent-eval-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/muhib-karim/agent-eval-harness/actions/workflows/ci.yml)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)
+[![Release](https://img.shields.io/github/v/release/muhib-karim/agent-eval-harness)](https://github.com/muhib-karim/agent-eval-harness/releases)
+[![Demo report](https://img.shields.io/badge/demo-live%20report-brightgreen.svg)](https://muhib-karim.github.io/agent-eval-harness/)
 
 A CLI and Python library for comparing coding models and coding-agent commands on the same
 tasks. Each attempt writes a Python module. The harness then grades it against pytest files the
 model never saw, and keeps the evidence: raw output, generated source, test log, and a JSONL
 record.
+
+**Live demo:** [the HTML report from the offline demo](https://muhib-karim.github.io/agent-eval-harness/),
+rebuilt by CI from `main` on every push (raw [results.jsonl](https://muhib-karim.github.io/agent-eval-harness/results.jsonl)).
 
 ## Problem
 
@@ -182,10 +187,10 @@ make lint typecheck test      # ruff check/format, mypy --strict, pytest with br
 make demo
 ```
 
-Last local run: `105 passed`, total branch coverage 98.34%. The gate in `pyproject.toml` is 85%.
+The test suite (pytest with branch coverage, gate 85% in `pyproject.toml`) runs in CI on every push.
 CI (`.github/workflows/ci.yml`) runs these checks on Python 3.11 and 3.12 and builds the sdist
 and wheel. It also runs the offline demo from a non-editable install and uploads its HTML
-report, then builds the Docker image and runs the demo inside it with `--network none`.
+report, publishes that report to GitHub Pages, then builds the Docker image and runs the demo inside it with `--network none`.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) and
 [CHANGELOG.md](CHANGELOG.md). MIT licensed.

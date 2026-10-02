@@ -2,6 +2,14 @@
 
 All notable changes are recorded here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## 1.1.0 — 2026-10-03
+
+- Result loading rejects impossible records: `tests_passed` greater than `tests_total`, and
+  duplicate model/task/repeat samples that would inflate pass@k.
+- New tests for both checks.
+- CI publishes the offline demo's HTML report to GitHub Pages on every push to `main`.
+- Package metadata: author and project URLs.
+
 ## 1.0.0 — 2026-09-29
 
 - CLI (`run`, `report`, `list-tasks`, `validate-task`) and typed library.
