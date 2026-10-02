@@ -1,0 +1,48 @@
+name: Demo report
+
+# Runs the offline demo (no network, no keys) and publishes its HTML report
+# to GitHub Pages, so the README can link to a real report from the current code.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install '.[grade]'
+      - run: agent-eval run examples/mock-demo.yaml --out runs/pages-demo
+      - name: Assemble site
+        run: |
+          mkdir -p site
+          cp runs/pages-demo/report.html site/index.html
+          agent-eval report runs/pages-demo/results.jsonl --format md > site/report.md
+          cp runs/pages-demo/results.jsonl site/results.jsonl
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
