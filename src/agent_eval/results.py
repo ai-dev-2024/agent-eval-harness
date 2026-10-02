@@ -9,7 +9,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from agent_eval.grader import Outcome
 from agent_eval.specs import StrictModel
@@ -33,6 +33,12 @@ class Attempt(StrictModel):
     cost_usd: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     error: str | None = None
     artifacts: str
+
+    @model_validator(mode="after")
+    def consistent_test_counts(self) -> Attempt:
+        if self.tests_passed > self.tests_total:
+            raise ValueError("passed test count exceeds total test count")
+        return self
 
 
 class TaskScore(StrictModel):
@@ -81,6 +87,7 @@ def pass_at_k(n: int, c: int, k: int) -> float:
 def load_attempts(path: Path) -> list[Attempt]:
     attempts: list[Attempt] = []
     seen: set[str] = set()
+    repeats: set[tuple[str, str, int]] = set()
     with path.open(encoding="utf-8") as stream:
         for index, line in enumerate(stream, 1):
             if not line.strip():
@@ -91,6 +98,10 @@ def load_attempts(path: Path) -> list[Attempt]:
                 raise ValueError(f"invalid attempt on line {index}") from exc
             if attempt.attempt_id in seen:
                 raise ValueError(f"duplicate attempt id on line {index}")
+            identity = (attempt.model, attempt.task_id, attempt.repeat)
+            if identity in repeats:
+                raise ValueError(f"duplicate model/task/repeat on line {index}")
+            repeats.add(identity)
             seen.add(attempt.attempt_id)
             attempts.append(attempt)
     if not attempts:
@@ -101,6 +112,10 @@ def load_attempts(path: Path) -> list[Attempt]:
 def summarize(attempts: list[Attempt], ks: tuple[int, ...] = (1, 2, 5, 10)) -> Summary:
     if not attempts or any(k < 1 for k in ks):
         raise ValueError("need attempts and positive k values")
+    if len({row.attempt_id for row in attempts}) != len(attempts):
+        raise ValueError("duplicate attempt id")
+    if len({(row.model, row.task_id, row.repeat) for row in attempts}) != len(attempts):
+        raise ValueError("duplicate model/task/repeat")
     grouped: dict[str, list[Attempt]] = defaultdict(list)
     for attempt in attempts:
         grouped[attempt.model].append(attempt)
